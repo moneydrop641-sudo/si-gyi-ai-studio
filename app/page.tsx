@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 const steps = [
   "Video ထည့်ရန်",
@@ -15,17 +15,71 @@ export default function Home() {
   const [step, setStep] = useState(0);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+
   const [videoUrl, setVideoUrl] = useState("");
-  const [fileName, setFileName] = useState("");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+
+  const [sourceText, setSourceText] = useState("");
   const [translation, setTranslation] = useState("");
+  const [translating, setTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState("");
+
   const [voice, setVoice] = useState("Nilar");
   const [subtitle, setSubtitle] = useState(true);
   const [blur, setBlur] = useState(false);
   const [flip, setFlip] = useState(false);
   const [crop, setCrop] = useState("Original");
 
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  async function translateWithGemini() {
+    if (!apiKey.trim()) {
+      setTranslateError("Gemini API Key ထည့်ပေးပါ။");
+      return;
+    }
+
+    if (!sourceText.trim()) {
+      setTranslateError("ဘာသာပြန်မယ့် မူရင်းစာသား ထည့်ပါ။");
+      return;
+    }
+
+    setTranslating(true);
+    setTranslateError("");
+
+    try {
+      const response = await fetch("/api/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          apiKey: apiKey.trim(),
+          text: sourceText.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "ဘာသာပြန်မအောင်မြင်ပါ။"
+        );
+      }
+
+      setTranslation(data.translatedText);
+    } catch (error) {
+      setTranslateError(
+        error instanceof Error
+          ? error.message
+          : "Network error ဖြစ်နေပါတယ်။"
+      );
+    } finally {
+      setTranslating(false);
+    }
+  }
+
   function nextStep() {
-    if (step === 0 && !videoUrl.trim() && !fileName) {
+    if (step === 0 && !videoUrl.trim() && !videoFile) {
       alert("Video ဖိုင် သို့မဟုတ် Video Link ထည့်ပါ။");
       return;
     }
@@ -43,15 +97,17 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen px-4 py-6 sm:px-8">
+    <main className="min-h-screen bg-[#08090b] px-4 py-6 text-white sm:px-8">
       <div className="mx-auto max-w-3xl">
         <header className="mb-8 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#e8ff47]">
               AI VIDEO WORKSPACE
             </p>
+
             <h1 className="mt-2 text-2xl font-black sm:text-3xl">
-              Si Gyi <span className="text-[#e8ff47]">AI Studio</span>
+              Si Gyi{" "}
+              <span className="text-[#e8ff47]">AI Studio</span>
             </h1>
           </div>
 
@@ -59,15 +115,16 @@ export default function Home() {
             href="https://t.me/SMITH_HH"
             target="_blank"
             rel="noreferrer"
-            className="rounded-xl border border-[#303239] px-3 py-2 text-sm hover:border-[#e8ff47]"
+            className="rounded-xl border border-[#303239] px-3 py-2 text-sm"
           >
             Admin ↗
           </a>
         </header>
 
+        {/* Gemini API Key */}
         <section className="mb-6 rounded-2xl border border-[#303239] bg-[#111317] p-4 sm:p-5">
           <label className="mb-3 block text-sm font-semibold">
-            Gemini API Key
+            🔑 Gemini API Key
           </label>
 
           <div className="flex gap-2">
@@ -75,12 +132,13 @@ export default function Home() {
               type={showKey ? "text" : "password"}
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
-              placeholder="Enter your Gemini API key"
+              placeholder="Paste your Gemini API key"
               autoComplete="off"
               className="min-w-0 flex-1 rounded-xl border border-[#303239] bg-[#090a0c] px-3 py-3 text-sm outline-none focus:border-[#e8ff47]"
             />
 
             <button
+              type="button"
               onClick={() => setShowKey(!showKey)}
               className="rounded-xl border border-[#303239] px-3 text-sm"
             >
@@ -89,16 +147,19 @@ export default function Home() {
           </div>
 
           <p className="mt-2 text-xs text-[#92949c]">
-            ကိုယ်ပိုင် API Key ကို ဒီ Browser မှာပဲ ယာယီထည့်သုံးရန်။
+            API Key ကို ဒီ Browser Session အတွင်းသာ အသုံးပြုပါ။
+            အခြားသူများနှင့် မမျှဝေပါနှင့်။
           </p>
         </section>
 
-        <section className="mb-5 rounded-2xl border border-[#303239] bg-[#111317] p-4 sm:p-6">
+        {/* Workflow */}
+        <section className="rounded-2xl border border-[#303239] bg-[#111317] p-4 sm:p-6">
           <div className="mb-6 flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-bold text-[#e8ff47]">
                 STEP {step + 1} / 6
               </p>
+
               <h2 className="mt-2 text-xl font-bold">
                 {steps[step]}
               </h2>
@@ -114,12 +175,15 @@ export default function Home() {
               <div
                 key={item}
                 className={`h-1.5 flex-1 rounded-full ${
-                  index <= step ? "bg-[#e8ff47]" : "bg-[#303239]"
+                  index <= step
+                    ? "bg-[#e8ff47]"
+                    : "bg-[#303239]"
                 }`}
               />
             ))}
           </div>
 
+          {/* STEP 1 */}
           {step === 0 && (
             <div>
               <label className="mb-2 block text-sm font-semibold">
@@ -139,53 +203,88 @@ export default function Home() {
                 </p>
 
                 <input
+                  ref={fileInput}
                   type="file"
                   accept="video/*"
-                  onChange={(event) =>
-                    setFileName(event.target.files?.[0]?.name || "")
-                  }
+                  onChange={(event) => {
+                    setVideoFile(
+                      event.target.files?.[0] || null
+                    );
+                  }}
                   className="w-full text-sm"
                 />
 
-                {fileName && (
+                {videoFile && (
                   <p className="mt-3 break-all text-sm text-[#e8ff47]">
-                    ✓ {fileName}
+                    ✓ {videoFile.name}
                   </p>
                 )}
               </div>
+
+              <p className="mt-3 text-xs text-[#92949c]">
+                မှတ်ချက် — Video Link ကို အလိုအလျောက် Download
+                လုပ်တဲ့စနစ် မချိတ်ဆက်ရသေးပါ။
+              </p>
             </div>
           )}
 
+          {/* STEP 2 */}
           {step === 1 && (
             <div>
               <label className="mb-2 block text-sm font-semibold">
-                မြန်မာဘာသာပြန်စာသား
+                မူရင်းစာသား
+              </label>
+
+              <textarea
+                value={sourceText}
+                onChange={(event) => setSourceText(event.target.value)}
+                placeholder="ဘာသာပြန်လိုတဲ့ မူရင်းစာသား ထည့်ပါ..."
+                rows={5}
+                className="mb-4 w-full rounded-xl border border-[#303239] bg-[#090a0c] p-4 outline-none focus:border-[#e8ff47]"
+              />
+
+              <button
+                type="button"
+                onClick={translateWithGemini}
+                disabled={translating}
+                className="w-full rounded-xl bg-[#e8ff47] px-4 py-3 font-bold text-black disabled:opacity-50"
+              >
+                {translating
+                  ? "ဘာသာပြန်နေသည်..."
+                  : "🌐 Translate with Gemini"}
+              </button>
+
+              {translateError && (
+                <p className="mt-3 break-words text-sm text-red-400">
+                  {translateError}
+                </p>
+              )}
+
+              <label className="mb-2 mt-5 block text-sm font-semibold">
+                မြန်မာဘာသာပြန်ရလဒ်
               </label>
 
               <textarea
                 value={translation}
                 onChange={(event) => setTranslation(event.target.value)}
-                placeholder="မြန်မာဘာသာပြန်စာသားကို ဒီမှာထည့်ပါ..."
-                rows={8}
-                className="w-full resize-y rounded-xl border border-[#303239] bg-[#090a0c] p-4 outline-none focus:border-[#e8ff47]"
+                placeholder="ဘာသာပြန်ရလဒ် ဒီမှာပေါ်လာမယ်..."
+                rows={6}
+                className="w-full rounded-xl border border-[#303239] bg-[#090a0c] p-4 outline-none focus:border-[#e8ff47]"
               />
-
-              <p className="mt-2 text-xs text-[#92949c]">
-                ယခုအဆင့်တွင် စာသားကို ကိုယ်တိုင်ထည့်နိုင်သည်။ AI
-                ဘာသာပြန်စနစ်ကို နောက်ပိုင်းချိတ်ဆက်ရန် လိုအပ်သည်။
-              </p>
             </div>
           )}
 
+          {/* STEP 3 */}
           {step === 2 && (
             <div>
               <p className="mb-3 text-sm text-[#92949c]">
-                မြန်မာအသံကို ရွေးပါ
+                မြန်မာအသံ ရွေးချယ်ပါ
               </p>
 
               <div className="grid grid-cols-2 gap-3">
                 {["Nilar", "Thiha"].map((name) => (
                   <button
+                    type="button"
                     key={name}
                     onClick={() => setVoice(name)}
                     className={`rounded-xl border p-5 text-left ${
@@ -194,10 +293,14 @@ export default function Home() {
                         : "border-[#303239] bg-[#090a0c]"
                     }`}
                   >
-                    <span className="block text-lg font-bold">{name}</span>
+                    <span className="block text-lg font-bold">
+                      {name}
+                    </span>
+
                     <span className="mt-1 block text-xs text-[#92949c]">
                       Myanmar Voice
                     </span>
+
                     {voice === name && (
                       <span className="mt-3 block text-xs text-[#e8ff47]">
                         ✓ Selected
@@ -208,23 +311,25 @@ export default function Home() {
               </div>
 
               <p className="mt-4 text-xs text-[#92949c]">
-                အသံဖိုင်အမှန်တကယ်ထုတ်ရန် TTS စနစ်ကို ချိတ်ဆက်ရပါမည်။
+                Nilar / Thiha TTS အသံဖိုင်ထုတ်လုပ်ရန်
+                Text-to-Speech စနစ်ကို ထပ်ချိတ်ဆက်ရပါမည်။
               </p>
             </div>
           )}
 
+          {/* STEP 4 */}
           {step === 3 && (
             <div className="space-y-4">
               <Toggle
                 label="MMSub Subtitle"
-                description="Video တွင် မြန်မာစာတန်းထိုးရန်"
+                description="မြန်မာစာတန်းထိုးရန်"
                 checked={subtitle}
                 onChange={setSubtitle}
               />
 
               <Toggle
                 label="Blur Effect"
-                description="Video ကို Blur ပြုလုပ်ရန်"
+                description="Video Blur ပြုလုပ်ရန်"
                 checked={blur}
                 onChange={setBlur}
               />
@@ -246,24 +351,31 @@ export default function Home() {
                   onChange={(event) => setCrop(event.target.value)}
                   className="w-full rounded-xl border border-[#303239] bg-[#090a0c] px-3 py-3"
                 >
-                  <option>Original</option>
-                  <option>9:16 — TikTok / Reels</option>
-                  <option>16:9 — YouTube</option>
-                  <option>1:1 — Square</option>
+                  <option value="Original">Original</option>
+                  <option value="9:16">9:16 — TikTok / Reels</option>
+                  <option value="16:9">16:9 — YouTube</option>
+                  <option value="1:1">1:1 — Square</option>
                 </select>
               </div>
+
+              <p className="text-xs text-[#92949c]">
+                ဒီရွေးချယ်မှုတွေက လက်ရှိမှာ Setting UI ဖြစ်ပါတယ်။
+                Video ပေါ်မှာ သက်ရောက်စေရန် Rendering စနစ် လိုအပ်ပါတယ်။
+              </p>
             </div>
           )}
 
+          {/* STEP 5 */}
           {step === 4 && (
             <div className="py-6 text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#e8ff47]/10 text-3xl">
-                ⚙️
-              </div>
+              <div className="mb-4 text-4xl">⚙️</div>
 
-              <h3 className="text-lg font-bold">Ready to Render</h3>
+              <h3 className="text-lg font-bold">
+                Render Configuration
+              </h3>
 
               <div className="mx-auto mt-5 max-w-sm space-y-2 rounded-xl border border-[#303239] bg-[#090a0c] p-4 text-left text-sm">
+                <p>Video: {videoFile?.name || videoUrl || "မထည့်ရသေး"}</p>
                 <p>Voice: {voice}</p>
                 <p>MMSub: {subtitle ? "On" : "Off"}</p>
                 <p>Blur: {blur ? "On" : "Off"}</p>
@@ -272,26 +384,33 @@ export default function Home() {
               </div>
 
               <p className="mt-4 text-xs text-[#92949c]">
-                Render အမှန်တကယ်လုပ်ရန် FFmpeg processing ကို
-                ချိတ်ဆက်ရန် လိုအပ်သည်။ ယခုခလုတ်က Video ကို မထုတ်လုပ်သေးပါ။
+                FFmpeg Rendering မချိတ်ဆက်ရသေးပါ။
+                ယခုအဆင့်တွင် Video ကို အမှန်တကယ် Render မလုပ်သေးပါ။
               </p>
             </div>
           )}
 
+          {/* STEP 6 */}
           {step === 5 && (
             <div className="py-8 text-center">
               <div className="mb-4 text-5xl">📥</div>
-              <h3 className="text-xl font-bold">Download Video</h3>
+
+              <h3 className="text-xl font-bold">
+                Download Video
+              </h3>
+
               <p className="mt-3 text-sm text-[#92949c]">
-                Render စနစ် မချိတ်ဆက်ရသေးသဖြင့် Download လုပ်ရန်
-                Video ဖိုင် မရှိသေးပါ။
+                Download လုပ်နိုင်မယ့် Output Video ကို
+                ရရှိရန် Render စနစ် ချိတ်ဆက်ဖို့ လိုအပ်ပါတယ်။
               </p>
             </div>
           )}
 
+          {/* Navigation */}
           <div className="mt-7 flex gap-3">
             {step > 0 && (
               <button
+                type="button"
                 onClick={previousStep}
                 className="rounded-xl border border-[#303239] px-5 py-3 text-sm font-semibold"
               >
@@ -301,6 +420,7 @@ export default function Home() {
 
             {step < 5 && (
               <button
+                type="button"
                 onClick={nextStep}
                 className="flex-1 rounded-xl bg-[#e8ff47] px-5 py-3 font-bold text-black"
               >
@@ -310,7 +430,7 @@ export default function Home() {
           </div>
         </section>
 
-        <footer className="pb-5 text-center text-xs text-[#777982]">
+        <footer className="pb-5 pt-5 text-center text-xs text-[#777982]">
           Si Gyi AI Studio · Admin{" "}
           <a
             href="https://t.me/SMITH_HH"
